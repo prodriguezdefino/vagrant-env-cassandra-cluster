@@ -9,8 +9,20 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.hostname = "cassandra-cluster-env-host.dev"
   config.vm.box = "ubuntu/trusty64"
 
-  # hadoop base ports in master
+  # opscenter port
   config.vm.network "forwarded_port", guest: 8888, host: 8888
+  # cassandra seed ports
+  config.vm.network "forwarded_port", guest: 7000, host: 7000
+  config.vm.network "forwarded_port", guest: 7001, host: 7001
+  config.vm.network "forwarded_port", guest: 7199, host: 7199
+  config.vm.network "forwarded_port", guest: 9042, host: 9042
+  config.vm.network "forwarded_port", guest: 9160, host: 9160
+  # cassandra node ports (defaults +100)
+  config.vm.network "forwarded_port", guest: 7100, host: 7100
+  config.vm.network "forwarded_port", guest: 7101, host: 7101
+  config.vm.network "forwarded_port", guest: 7299, host: 7299
+  config.vm.network "forwarded_port", guest: 9142, host: 9142
+  config.vm.network "forwarded_port", guest: 9260, host: 9260
 
   config.vm.provision :shell, inline: <<-SCRIPT
     echo "Setting env variables..."
@@ -47,31 +59,73 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     # first find the docker0 interface assigned IP
     DOCKER0_IP=$(ip -o -4 addr list docker0 | perl -n -e 'if (m{inet\s([\d\.]+)\/\d+\s}xms) { print $1 }')
     
+    # then launch a skydns container to register our network addresses
+    dns=$(docker run -d \
+	    -p $DOCKER0_IP:53:53/udp \
+	    --name skydns \
+	    crosbymichael/skydns \
+	    -nameserver $fwd_dns:53 \
+	    -domain docker)
     echo "Starting dns regristry..."
     echo "*************************"
-    # then launch a skydns container to register our network addresses
-    docker run -d -p $DOCKER0_IP:53:53/udp --name skydns crosbymichael/skydns -nameserver $fwd_dns:53 -domain docker
+    echo $dns
     echo " "
     
     # inspect the container to extract the IP of our DNS server
     DNS_IP=$(docker inspect --format '{{ .NetworkSettings.IPAddress }}' skydns)
     
+    # launch skydock as our listener of container events in order to register/deregister all the names on skydns
+	skydock=$(docker run -d \
+		-v /var/run/docker.sock:/docker.sock \
+		--name skydock \
+		crosbymichael/skydock \
+		-ttl 30 \
+		-environment dev \
+		-s /docker.sock \
+		-domain docker \
+		-name skydns)
     echo "Starting docker event listener..."
     echo "*********************************"
-    # launch skydock as our listener of container events in order to register/deregister all the names on skydns
-    docker run -d -v /var/run/docker.sock:/docker.sock --name skydock crosbymichael/skydock -ttl 30 -environment dev -s /docker.sock -domain docker -name skydns
+    echo $skydock
     echo " "
     
+    # boot a cassandra node as a seed 
+	seed1=$(docker run -itd \
+		--name=seed1 \
+		-h seed1.cassandranode.dev.docker \
+		--dns=$DNS_IP \
+		-e "http_proxy=$http_proxy" \
+		-e "https_proxy=$https_proxy" \
+		-p 7000:7000 \
+		-p 7001:7001 \
+		-p 7199:7199 \
+		-p 9042:9042 \
+		-p 9160:9160 \
+		prodriguezdefino/cassandranode)
     echo "Starting seed node seed1.cassandranode.dev.docker ..."
     echo "*****************************************************"
-    # boot a cassandra node as a seed 
-	docker run -itd --name=seed1 -h seed1.cassandranode.dev.docker --dns=$DNS_IP -e "http_proxy=$http_proxy" -e "https_proxy=$https_proxy" prodriguezdefino/cassandranode
+    echo $seed1
     echo " "
     
+    # now boot another node for this ring 
+	node1=$(docker run -itd \
+		--name=node1 \
+		-h node1.cassandranode.dev.docker \
+		--dns=$DNS_IP \
+		-e "http_proxy=$http_proxy" \
+		-e "https_proxy=$https_proxy" \
+		-e "SEEDS_IPS=seed1.cassandranode.dev.docker" \
+		-e "OPTS_CENTER=true" \
+		-p 8888:8888 \
+		-p 7100:7000 \
+		-p 7101:7001 \
+		-p 7299:7199 \
+		-p 9142:9042 \
+		-p 9260:9160 \
+		prodriguezdefino/cassandranode)
     echo "Starting node node1.cassandranode.dev.docker ..."
     echo "************************************************"
-    # now boot another node for this ring 
-	docker run -itd --name=node1 -h node1.cassandranode.dev.docker --dns=$DNS_IP -e "http_proxy=$http_proxy" -e "https_proxy=$https_proxy" -e "SEEDS_IPS=seed1.cassandranode.dev.docker" -e "OPTS_CENTER=true" -p 8888:8888 prodriguezdefino/cassandranode
+    echo $node1
 	echo " "
     
     echo "Ops Center available on node1.cassandranode.dev.docker:8888 ..."
