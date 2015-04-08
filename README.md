@@ -1,2 +1,4 @@
-# vagrant-env-cassandra-cluster
-A virtualized environment to run a cluster of dockerized Cassandra images.
+# A virtualized environment for Apache Cassandra Docker images
+
+
+
