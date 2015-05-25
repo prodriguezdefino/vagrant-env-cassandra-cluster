@@ -1,5 +1,7 @@
 #!/bin/bash
 
+fwd_dns="8.8.8.8"
+
 echo "Provisioning Docker ..."
 echo "***********************"
 echo " "
@@ -18,7 +20,6 @@ sudo docker rm $(sudo docker ps -qa)
 echo " "
 
 sudo mkdir -p /srv/seed1
-sudo mkdir -p /srv/node1
 
 # first find the docker0 interface assigned IP
 DOCKER0_IP=$(ip -o -4 addr list docker0 | awk '{split($4,a,"/"); print a[1]}')
@@ -60,13 +61,14 @@ sleep 5
 # boot a cassandra node as a seed 
 seed1=$(sudo docker run -itd \
 	--name=seed1 \
-	-h seed1.cassandranode.docker.dev \
+	-h seed1.cassandranode.dev.docker \
 	--dns=$DNS_IP \
 	-e "http_proxy=$http_proxy" \
 	-e "https_proxy=$https_proxy" \
 	-e "OPTS_CENTER=true" \
 	-p 7000:7000 \
 	-p 7001:7001 \
+	-p 8888:8888 \
 	-p 7199:7199 \
 	-p 9042:9042 \
 	-p 9160:9160 \
@@ -76,28 +78,3 @@ echo "Starting seed node seed1.cassandranode.dev.docker ..."
 echo "*****************************************************"
 echo $seed1
 echo " "
-
-sleep 10
-
-# now boot another node for this ring 
-node1=$(sudo docker run -itd \
-	--name=node1 \
-	-h node1.cassandranode.dev.docker \
-	--dns=$DNS_IP \
-	-e "http_proxy=$http_proxy" \
-	-e "https_proxy=$https_proxy" \
-	-e "SEEDS_IPS=seed1.cassandranode.dev.docker" \
-    -e "OPTS_CENTER=true" \
-	-p 8888:8888 \
-	-p 7100:7000 \
-	-p 7101:7001 \
-	-p 7299:7199 \
-	-p 9142:9042 \
-	-p 9260:9160 \
-	-v /srv/node1:/var/lib/cassandra/ \
-	prodriguezdefino/cassandranode)
-echo "Starting node node1.cassandranode.dev.docker ..."
-echo "************************************************"
-echo $node1
-echo " "
-
