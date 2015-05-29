@@ -19,7 +19,7 @@ if [ "$2" -eq "$2" ] 2>/dev/null
 then
    echo "ports will be shifted by $2"
 else
-   echo "error: $2 is not a number."; 
+   echo "error: $2 is not a number." 
    exit 1
 fi
 
@@ -40,7 +40,7 @@ DNS_IP=$(sudo docker inspect --format '{{ .NetworkSettings.IPAddress }}' skydns)
 # now boot another node for this ring 
 newnode=$(sudo docker run -itd \
 	--name=$1 \
-	-h node1.cassandranode.dev.docker \
+	-h $1.cassandranode.dev.docker \
 	--dns=$DNS_IP \
 	-e "http_proxy=$http_proxy" \
 	-e "https_proxy=$https_proxy" \
